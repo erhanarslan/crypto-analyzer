@@ -13,7 +13,10 @@ const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
 
 app.get("/health", async () => {
-  return { ok: true };
+  return {
+    ok: true,
+    service: "crypto-analyzer-api",
+  };
 });
 
 app.get("/api/market/symbols", async (request, reply) => {
@@ -152,7 +155,9 @@ app.get("/api/scan", async (request, reply) => {
   }
 });
 
+const port = Number(process.env.PORT ?? 3001);
+
 await app.listen({
-  port: 3001,
+  port,
   host: "0.0.0.0",
 });
