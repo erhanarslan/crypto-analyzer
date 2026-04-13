@@ -6,7 +6,7 @@ A production-style crypto market analysis dashboard built with a clean monorepo 
 
 ## 🌐 Live Demo
 
-- **Web App:** https://celebrated-sawine-f66610.netlify.app/
+- **Web App:** https://bucolic-pithivier-1a67e1.netlify.app/
 - **API:** https://crypto-analyzer-api-nikp.onrender.com
 
 ---
