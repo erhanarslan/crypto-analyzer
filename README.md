@@ -6,8 +6,8 @@ A production-style crypto market analysis dashboard built with a clean monorepo 
 
 ## 🌐 Live Demo
 
-- **Web App:** https://YOUR-VERCEL-URL
-- **API:** https://YOUR-RENDER-URL
+- **Web App:** https://celebrated-sawine-f66610.netlify.app/
+- **API:** https://crypto-analyzer-api-nikp.onrender.com
 
 ---
 
