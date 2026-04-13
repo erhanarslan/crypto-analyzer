@@ -2,7 +2,7 @@ export const tr = {
   app: {
     title: "Crypto Analyzer",
     subtitle:
-      "Coin seç, timeframe değiştir, detaylı teknik değerlendirmeyi izle.",
+      "Coin seç, timeframe değiştir, daha net ve aksiyon odaklı teknik değerlendirmeyi izle.",
     chartTitle: "Grafik",
     chartSubtitle: "EMA 20 / 50 / 200 ve destek-direnç bölgeleri",
     loading: "Yükleniyor...",
@@ -11,39 +11,51 @@ export const tr = {
   },
 
   panel: {
-    technicalSummary: "Teknik analiz özeti",
+    technicalSummary: "Analiz Özeti",
     trend: "Trend",
     signal: "Sinyal",
     score: "Skor",
+    scoreMeaning: "Skor Anlamı",
     support: "Destek",
     resistance: "Direnç",
-    summary: "Özet",
-    reasons: "Nedenler",
-    marketContext: "Piyasa Bağlamı",
-    volumeState: "Hacim Durumu",
+    summary: "Kısa Sonuç",
+    reasons: "Teknik Gerekçeler",
+    marketContext: "Piyasa Durumu",
+    volumeState: "Hacim",
     volumeComment: "Hacim Yorumu",
-    orderFlow: "Alım / Satım İzi",
-    expertCommentary: "Usta Yorumu",
-    tradePlan: "İşlem Planı",
-    entryHint: "Giriş Fikri",
+    orderFlow: "Son Mum İzi",
+    expertCommentary: "Net Yorum",
+    tradePlan: "Karar Çerçevesi",
+    entryHint: "Yeni Pozisyon",
     breakoutAbove: "Üstü Teyit",
-    breakdownBelow: "Altı Risk",
+    breakdownBelow: "Altı Bozulma",
     invalidation: "Geçersizlik",
-    takeProfit: "Kâr Alma Mantığı",
-    action: "Aksiyon",
-    news: "Haber Durumu",
+    takeProfit: "Kâr Alma",
+    action: "Elde Varsa",
+    news: "Haber",
     newsComment: "Haber Yorumu",
     notAvailable: "Yok",
+    shortSide: "Short Tarafı",
   },
 
   scanner: {
-    title: "Tarayıcı",
-    subtitle: "Büyük coinlerde hızlı fırsat taraması",
+    title: "Öne Çıkanlar",
+    subtitle: "Skoru ve yapısı öne çıkan coinler",
     sortedByScore: "Skora göre sıralı",
     loading: "Tarama verileri yükleniyor...",
-    empty: "Tarama verisi bulunamadı.",
-    trigger: "Tetik",
+    empty: "Seçilen minimum skor için uygun coin bulunamadı.",
+    trigger: "Yeni Pozisyon",
     bias: "Yön",
+    opportunities: "Öne Çıkan Fırsatlar",
+    minScore: "Minimum skor",
+  },
+
+  favorites: {
+    title: "Favorilerim",
+    subtitle: "Takip ettiğin coinlerin kısa kritik özeti",
+    empty: "Henüz favori coin yok.",
+    add: "Favoriye ekle",
+    remove: "Favoriden çıkar",
   },
 
   trend: {
@@ -53,10 +65,10 @@ export const tr = {
   },
 
   signal: {
-    possible_buy_zone: "Olası Alım Bölgesi",
-    breakout_watch: "Kırılım İzleniyor",
-    pullback_entry: "Geri Çekilme Girişi",
-    no_trade: "İşlem Yok",
+    possible_buy_zone: "Alım Bölgesi Adayı",
+    breakout_watch: "Kırılım Takibi",
+    pullback_entry: "Pullback Long Takibi",
+    no_trade: "Net Üstünlük Yok",
   },
 
   volumeState: {
@@ -73,9 +85,37 @@ export const tr = {
   },
 
   tradeBias: {
-    long_watch: "Long izlenebilir",
-    short_risk: "Short baskısı / long riskli",
-    wait: "Bekle",
+    long_watch: "Long taraf izlenebilir",
+    short_risk: "Short baskısı yüksek",
+    wait: "Bekle / teyit ara",
+  },
+
+  newPositionAction: {
+    buy_watch: "Alım için izlenebilir",
+    breakout_watch: "Kırılım teyidi bekle",
+    wait: "Yeni işlem için bekle",
+    avoid: "Yeni alım için uygun değil",
+  },
+
+  holderAction: {
+    hold: "Elde varsa tutulabilir",
+    protect_profit: "Kârı koru",
+    reduce_risk: "Riski azalt",
+    wait: "Elde varsa agresif ekleme yapma",
+  },
+
+  shortAction: {
+    not_ready: "Short için uygun değil",
+    watch: "Short baskısı izlenebilir",
+    aggressive_only: "Yalnız agresif short senaryosu",
+  },
+
+  scoreBands: {
+    weak: "Zayıf yapı",
+    watch: "İzlenebilir ama zayıf",
+    developing: "Gelişen setup",
+    strong: "Güçlü takip",
+    premium: "Çok güçlü setup",
   },
 
   reasons: {

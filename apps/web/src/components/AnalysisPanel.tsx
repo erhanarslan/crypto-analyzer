@@ -1,307 +1,503 @@
-import { tr } from "../i18n/tr";
+import { useMemo } from "react";
+import { buildStructuredAnalysis } from "../../../../packages/analysis-core/src";
+import type {
+  CoinTechnicalSnapshot,
+  Timeframe,
+} from "../../../../packages/shared/src";
 
-type Zone = {
-  low: number;
-  high: number;
-  touches: number;
-};
-
-type TradePlan = {
-  bias: "long_watch" | "short_risk" | "wait";
-  entryHint: string;
-  breakoutAbove: number | null;
-  breakdownBelow: number | null;
-  invalidationHint: string;
-  takeProfitHint: string;
-  actionComment: string;
-};
-
-type Props = {
-  symbol: string;
-  interval: string;
-  trend: "uptrend" | "downtrend" | "range";
+type TimeframeSummaryItem = {
+  timeframe: Timeframe;
   score: number;
-  signal:
-    | "possible_buy_zone"
-    | "breakout_watch"
-    | "pullback_entry"
-    | "no_trade";
-  summary: string;
-  reasons: string[];
-  supportZones: Zone[];
-  resistanceZones: Zone[];
-  volumeState: "weak" | "normal" | "strong";
-  volumeComment: string;
-  orderFlowComment: string;
-  marketContext: string;
-  expertCommentary: string;
-  newsState: "not_connected" | "positive" | "negative" | "mixed";
-  newsComment: string;
-  tradePlan: TradePlan;
+  verdict: string;
+  tone: "bullish" | "cautious" | "neutral" | "bearish";
 };
 
-const trendBadgeMap: Record<string, string> = {
-  uptrend: "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200",
-  downtrend: "bg-rose-100 text-rose-700 ring-1 ring-rose-200",
-  range: "bg-amber-100 text-amber-700 ring-1 ring-amber-200",
+type AnalysisPanelProps = {
+  snapshot: CoinTechnicalSnapshot;
+  timeframeSummary?: TimeframeSummaryItem[];
 };
 
-const signalBadgeMap: Record<string, string> = {
-  pullback_entry: "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200",
-  breakout_watch: "bg-sky-100 text-sky-700 ring-1 ring-sky-200",
-  possible_buy_zone: "bg-violet-100 text-violet-700 ring-1 ring-violet-200",
-  no_trade: "bg-slate-200 text-slate-700 ring-1 ring-slate-300",
+type ScoreBreakdownItem = {
+  label: string;
+  value: number;
+  tone: "positive" | "negative" | "neutral";
 };
 
-const biasBadgeMap: Record<string, string> = {
-  long_watch: "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200",
-  short_risk: "bg-rose-100 text-rose-700 ring-1 ring-rose-200",
-  wait: "bg-slate-200 text-slate-700 ring-1 ring-slate-300",
-};
+function formatNumber(value: number | null | undefined, digits = 4): string {
+  if (value == null || Number.isNaN(value)) return "-";
 
-function getScoreColor(score: number) {
-  if (score >= 70) return "text-emerald-600";
-  if (score >= 55) return "text-sky-600";
-  if (score >= 40) return "text-amber-600";
-  return "text-rose-600";
+  if (value >= 1000) {
+    return value.toLocaleString("en-US", {
+      maximumFractionDigits: 2,
+    });
+  }
+
+  if (value >= 1) {
+    return value.toFixed(Math.min(digits, 4));
+  }
+
+  if (value >= 0.01) {
+    return value.toFixed(5);
+  }
+
+  return value.toFixed(8);
 }
 
-function formatZone(zone?: Zone) {
-  if (!zone) return tr.panel.notAvailable;
-  return `${zone.low} - ${zone.high} (${zone.touches} temas)`;
+function formatPercent(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return "-";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
-function formatValue(value: number | null) {
-  if (value == null) return tr.panel.notAvailable;
-  return String(value);
+function toneClasses(tone: "bullish" | "cautious" | "neutral" | "bearish") {
+  switch (tone) {
+    case "bullish":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "bearish":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    case "cautious":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    default:
+      return "border-slate-200 bg-slate-50 text-slate-700";
+  }
+}
+
+function scoreToneClasses(score: number) {
+  if (score >= 80) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+  if (score >= 65) {
+    return "border-sky-200 bg-sky-50 text-sky-700";
+  }
+  if (score >= 50) {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+  return "border-rose-200 bg-rose-50 text-rose-700";
+}
+
+function breakdownToneClasses(tone: "positive" | "negative" | "neutral") {
+  switch (tone) {
+    case "positive":
+      return "text-emerald-600";
+    case "negative":
+      return "text-rose-600";
+    default:
+      return "text-slate-600";
+  }
+}
+
+function buildScoreBreakdown(
+  snapshot: CoinTechnicalSnapshot,
+): ScoreBreakdownItem[] {
+  const items: ScoreBreakdownItem[] = [];
+
+  const emaStackBullish =
+    snapshot.ema20 > snapshot.ema50 && snapshot.ema50 > snapshot.ema200;
+  const emaStackBearish =
+    snapshot.ema20 < snapshot.ema50 && snapshot.ema50 < snapshot.ema200;
+
+  if (emaStackBullish) {
+    items.push({
+      label: "Trend yapısı",
+      value: 25,
+      tone: "positive",
+    });
+  } else if (emaStackBearish) {
+    items.push({
+      label: "Trend yapısı",
+      value: -10,
+      tone: "negative",
+    });
+  } else {
+    items.push({
+      label: "Trend yapısı",
+      value: 0,
+      tone: "neutral",
+    });
+  }
+
+  const priceVsEma =
+    (snapshot.currentPrice > snapshot.ema20 ? 1 : 0) +
+    (snapshot.currentPrice > snapshot.ema50 ? 1 : 0) +
+    (snapshot.currentPrice > snapshot.ema200 ? 1 : 0);
+
+  items.push({
+    label: "EMA üstünde kalış",
+    value: priceVsEma * 10,
+    tone:
+      priceVsEma >= 2 ? "positive" : priceVsEma === 1 ? "neutral" : "negative",
+  });
+
+  const rv = snapshot.relativeVolume ?? 0;
+  if (rv >= 1.4) {
+    items.push({
+      label: "Hacim desteği",
+      value: 10,
+      tone: "positive",
+    });
+  } else if (rv >= 1.1) {
+    items.push({
+      label: "Hacim desteği",
+      value: 6,
+      tone: "positive",
+    });
+  } else if (rv < 0.85) {
+    items.push({
+      label: "Hacim desteği",
+      value: -8,
+      tone: "negative",
+    });
+  } else {
+    items.push({
+      label: "Hacim desteği",
+      value: 0,
+      tone: "neutral",
+    });
+  }
+
+  const rsi = snapshot.rsi ?? 50;
+  if (rsi >= 55 && rsi <= 70) {
+    items.push({
+      label: "Momentum (RSI)",
+      value: 12,
+      tone: "positive",
+    });
+  } else if (rsi >= 50 && rsi < 55) {
+    items.push({
+      label: "Momentum (RSI)",
+      value: 6,
+      tone: "positive",
+    });
+  } else if (rsi < 42) {
+    items.push({
+      label: "Momentum (RSI)",
+      value: -10,
+      tone: "negative",
+    });
+  } else if (rsi > 75) {
+    items.push({
+      label: "Momentum (RSI)",
+      value: -4,
+      tone: "negative",
+    });
+  } else {
+    items.push({
+      label: "Momentum (RSI)",
+      value: 0,
+      tone: "neutral",
+    });
+  }
+
+  const insideSupport =
+    snapshot.supportZone != null &&
+    snapshot.currentPrice >= snapshot.supportZone.low &&
+    snapshot.currentPrice <= snapshot.supportZone.high;
+
+  const insideResistance =
+    snapshot.resistanceZone != null &&
+    snapshot.currentPrice >= snapshot.resistanceZone.low &&
+    snapshot.currentPrice <= snapshot.resistanceZone.high;
+
+  if (insideSupport) {
+    items.push({
+      label: "Destek bölgesi",
+      value: 6,
+      tone: "positive",
+    });
+  } else if (insideResistance) {
+    items.push({
+      label: "Direnç bölgesi",
+      value: -4,
+      tone: "negative",
+    });
+  } else {
+    items.push({
+      label: "Seviye konumu",
+      value: 0,
+      tone: "neutral",
+    });
+  }
+
+  return items;
+}
+
+function buildDecisionSentence(
+  newVerdict: string,
+  existingVerdict: string,
+  shortVerdict: string,
+) {
+  return `Yeni pozisyon: ${newVerdict}. Elde varsa: ${existingVerdict}. Short tarafı: ${shortVerdict}.`;
+}
+
+function timeframeToneClasses(
+  tone: "bullish" | "cautious" | "neutral" | "bearish",
+) {
+  switch (tone) {
+    case "bullish":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "bearish":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    case "cautious":
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    default:
+      return "border-slate-200 bg-slate-50 text-slate-700";
+  }
 }
 
 export default function AnalysisPanel({
-  symbol,
-  interval,
-  trend,
-  score,
-  signal,
-  summary,
-  reasons,
-  supportZones,
-  resistanceZones,
-  volumeState,
-  volumeComment,
-  orderFlowComment,
-  marketContext,
-  expertCommentary,
-  newsState,
-  newsComment,
-  tradePlan,
-}: Props) {
-  const support = supportZones[0];
-  const resistance = resistanceZones[0];
+  snapshot,
+  timeframeSummary = [],
+}: AnalysisPanelProps) {
+  const analysis = useMemo(() => buildStructuredAnalysis(snapshot), [snapshot]);
+
+  const scoreBreakdown = useMemo(
+    () => buildScoreBreakdown(snapshot),
+    [snapshot],
+  );
+
+  const decisionSentence = useMemo(
+    () =>
+      buildDecisionSentence(
+        analysis.newPosition.verdict,
+        analysis.existingPosition.verdict,
+        analysis.shortPlan.verdict,
+      ),
+    [analysis],
+  );
 
   return (
-    <aside className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-5 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">
-            {symbol} / {interval}
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            {tr.panel.technicalSummary}
-          </p>
+    <div className="space-y-4">
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.14em] text-slate-500">
+              Analiz özeti
+            </div>
+            <h2 className="mt-1 text-xl font-semibold text-slate-900">
+              {snapshot.symbol} · {snapshot.timeframe.toUpperCase()}
+            </h2>
+          </div>
+
+          <div
+            className={`rounded-full border px-3 py-1 text-sm font-semibold ${scoreToneClasses(
+              snapshot.score,
+            )}`}
+          >
+            Score {snapshot.score}
+          </div>
         </div>
 
-        <div
-          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-            trendBadgeMap[trend] ?? "bg-slate-100 text-slate-700"
-          }`}
-        >
-          {tr.trend[trend]}
+        <p className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700">
+          {decisionSentence}
+        </p>
+
+        <p className="mt-3 text-sm leading-6 text-slate-600">
+          {analysis.headline}
+        </p>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="text-xs uppercase tracking-[0.14em] text-slate-500">
+          Tek cümle karar
+        </div>
+        <div className="mt-4 grid gap-3">
+          <div
+            className={`rounded-2xl border px-4 py-3 ${toneClasses(
+              analysis.newPosition.tone,
+            )}`}
+          >
+            <div className="text-[11px] uppercase tracking-[0.14em] opacity-70">
+              Yeni pozisyon
+            </div>
+            <div className="mt-1 text-sm font-semibold">
+              {analysis.newPosition.verdict}
+            </div>
+          </div>
+
+          <div
+            className={`rounded-2xl border px-4 py-3 ${toneClasses(
+              analysis.existingPosition.tone,
+            )}`}
+          >
+            <div className="text-[11px] uppercase tracking-[0.14em] opacity-70">
+              Elde varsa
+            </div>
+            <div className="mt-1 text-sm font-semibold">
+              {analysis.existingPosition.verdict}
+            </div>
+          </div>
+
+          <div
+            className={`rounded-2xl border px-4 py-3 ${toneClasses(
+              analysis.shortPlan.tone,
+            )}`}
+          >
+            <div className="text-[11px] uppercase tracking-[0.14em] opacity-70">
+              Short tarafı
+            </div>
+            <div className="mt-1 text-sm font-semibold">
+              {analysis.shortPlan.verdict}
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-slate-50 p-3">
-            <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-              {tr.panel.signal}
-            </div>
+      {timeframeSummary.length > 0 && (
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-xs uppercase tracking-[0.14em] text-slate-500">
+            Timeframe uyumu
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            {timeframeSummary.map((item) => (
+              <div
+                key={item.timeframe}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+              >
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                    {item.timeframe}
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-slate-900">
+                    {item.verdict}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${timeframeToneClasses(
+                      item.tone,
+                    )}`}
+                  >
+                    {item.score}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="text-xs uppercase tracking-[0.14em] text-slate-500">
+          Score breakdown
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {scoreBreakdown.map((item) => (
             <div
-              className={`inline-flex rounded-full px-3 py-1 text-sm font-semibold ${
-                signalBadgeMap[signal] ?? "bg-slate-100 text-slate-700"
-              }`}
+              key={item.label}
+              className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
             >
-              {tr.signal[signal]}
-            </div>
-          </div>
-
-          <div className="rounded-xl bg-slate-50 p-3">
-            <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-              {tr.panel.score}
-            </div>
-            <div className={`text-2xl font-bold ${getScoreColor(score)}`}>
-              {score}
-              <span className="ml-1 text-sm font-medium text-slate-500">
-                /100
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl bg-slate-50 p-3">
-          <div className="grid grid-cols-1 gap-3">
-            <div>
-              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                {tr.panel.support}
-              </div>
-              <div className="text-sm font-medium text-slate-800">
-                {formatZone(support)}
+              <div className="text-sm text-slate-700">{item.label}</div>
+              <div
+                className={`text-sm font-semibold ${breakdownToneClasses(
+                  item.tone,
+                )}`}
+              >
+                {item.value > 0 ? `+${item.value}` : item.value}
               </div>
             </div>
-
-            <div>
-              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-                {tr.panel.resistance}
-              </div>
-              <div className="text-sm font-medium text-slate-800">
-                {formatZone(resistance)}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl bg-slate-50 p-3">
-          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-            {tr.panel.summary}
-          </div>
-          <p className="text-sm leading-6 text-slate-700">{summary}</p>
-        </div>
-
-        <div className="rounded-xl bg-slate-50 p-3">
-          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-            {tr.panel.marketContext}
-          </div>
-          <p className="text-sm leading-6 text-slate-700">{marketContext}</p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3">
-          <div className="rounded-xl bg-slate-50 p-3">
-            <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-              {tr.panel.volumeState}
-            </div>
-            <div className="mb-2 text-sm font-semibold text-slate-800">
-              {tr.volumeState[volumeState]}
-            </div>
-            <p className="text-sm leading-6 text-slate-700">{volumeComment}</p>
-          </div>
-
-          <div className="rounded-xl bg-slate-50 p-3">
-            <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-              {tr.panel.orderFlow}
-            </div>
-            <p className="text-sm leading-6 text-slate-700">
-              {orderFlowComment}
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-xl bg-slate-50 p-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
-              {tr.panel.tradePlan}
-            </div>
-
-            <div
-              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                biasBadgeMap[tradePlan.bias] ?? "bg-slate-100 text-slate-700"
-              }`}
-            >
-              {tr.tradeBias[tradePlan.bias]}
-            </div>
-          </div>
-
-          <div className="space-y-2 text-sm text-slate-700">
-            <p>
-              <span className="font-semibold text-slate-900">
-                {tr.panel.entryHint}:{" "}
-              </span>
-              {tradePlan.entryHint}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-900">
-                {tr.panel.breakoutAbove}:{" "}
-              </span>
-              {formatValue(tradePlan.breakoutAbove)}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-900">
-                {tr.panel.breakdownBelow}:{" "}
-              </span>
-              {formatValue(tradePlan.breakdownBelow)}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-900">
-                {tr.panel.invalidation}:{" "}
-              </span>
-              {tradePlan.invalidationHint}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-900">
-                {tr.panel.takeProfit}:{" "}
-              </span>
-              {tradePlan.takeProfitHint}
-            </p>
-            <p>
-              <span className="font-semibold text-slate-900">
-                {tr.panel.action}:{" "}
-              </span>
-              {tradePlan.actionComment}
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-xl bg-slate-50 p-3">
-          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-            {tr.panel.expertCommentary}
-          </div>
-          <p className="text-sm leading-6 text-slate-700">{expertCommentary}</p>
-        </div>
-
-        <div className="rounded-xl bg-slate-50 p-3">
-          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-            {tr.panel.news}
-          </div>
-          <div className="mb-2 text-sm font-semibold text-slate-800">
-            {tr.newsState[newsState]}
-          </div>
-          <p className="text-sm leading-6 text-slate-700">{newsComment}</p>
-        </div>
-
-        <div className="rounded-xl bg-slate-50 p-3">
-          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-            {tr.panel.reasons}
-          </div>
-
-          {reasons.length ? (
-            <ul className="space-y-2">
-              {reasons.map((reason) => (
-                <li
-                  key={reason}
-                  className="flex items-start gap-2 text-sm text-slate-700"
-                >
-                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-slate-400" />
-                  <span>
-                    {tr.reasons[reason as keyof typeof tr.reasons] ?? reason}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-slate-500">
-              Açıklayıcı neden bulunmadı.
-            </p>
-          )}
+          ))}
         </div>
       </div>
-    </aside>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="text-xs uppercase tracking-[0.14em] text-slate-500">
+          Kritik seviyeler
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+              Fiyat
+            </div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">
+              {formatNumber(snapshot.currentPrice)}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+              24h değişim
+            </div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">
+              {formatPercent(snapshot.changePercent24h)}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+              Üstü teyit
+            </div>
+            <div className="mt-1 text-sm font-semibold text-emerald-600">
+              {formatNumber(analysis.levels.confirmAbove)}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+              Altı bozulma
+            </div>
+            <div className="mt-1 text-sm font-semibold text-rose-600">
+              {formatNumber(analysis.levels.invalidationBelow)}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+              Relative volume
+            </div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">
+              {snapshot.relativeVolume == null
+                ? "-"
+                : snapshot.relativeVolume.toFixed(2)}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="text-[11px] uppercase tracking-[0.14em] text-slate-500">
+              RSI
+            </div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">
+              {snapshot.rsi == null ? "-" : snapshot.rsi.toFixed(1)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="text-xs uppercase tracking-[0.14em] text-slate-500">
+          Güçlü yanlar
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {analysis.drivers.map((item) => (
+            <div
+              key={item}
+              className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800"
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="text-xs uppercase tracking-[0.14em] text-slate-500">
+          Riskler
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {analysis.risks.map((item) => (
+            <div
+              key={item}
+              className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-800"
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }

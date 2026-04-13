@@ -13,29 +13,25 @@ type TradePlan = {
   shortAction: "not_ready" | "watch" | "aggressive_only";
 };
 
-type ScannerItem = {
+type FavoriteItem = {
   symbol: string;
-  interval: "15m" | "30m" | "1h" | "4h";
   trend: "uptrend" | "downtrend" | "range";
-  score: number;
   signal:
     | "possible_buy_zone"
     | "breakout_watch"
     | "pullback_entry"
     | "no_trade";
+  score: number;
   summary: string;
+  volumeState: "weak" | "normal" | "strong";
   tradePlan?: TradePlan;
-  volumeState?: "weak" | "normal" | "strong";
-  marketContext?: string;
 };
 
 type Props = {
-  items: ScannerItem[];
-  loading: boolean;
+  items: FavoriteItem[];
   activeSymbol: string;
-  favoriteSymbols: string[];
-  onSelectSymbol: (symbol: string) => void;
-  onToggleFavorite: (symbol: string) => void;
+  onSelect: (symbol: string) => void;
+  onRemove: (symbol: string) => void;
 };
 
 const trendBadgeMap: Record<string, string> = {
@@ -52,88 +48,62 @@ const signalBadgeMap: Record<string, string> = {
 };
 
 function getScoreTone(score: number) {
-  if (score >= 80) {
-    return "text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200";
+  if (score >= 70) {
+    return "text-emerald-600 bg-emerald-50 ring-1 ring-emerald-200";
   }
 
-  if (score >= 65) {
-    return "text-sky-700 bg-sky-50 ring-1 ring-sky-200";
+  if (score >= 55) {
+    return "text-sky-600 bg-sky-50 ring-1 ring-sky-200";
   }
 
-  if (score >= 50) {
-    return "text-amber-700 bg-amber-50 ring-1 ring-amber-200";
+  if (score >= 40) {
+    return "text-amber-600 bg-amber-50 ring-1 ring-amber-200";
   }
 
-  if (score >= 35) {
-    return "text-orange-700 bg-orange-50 ring-1 ring-orange-200";
-  }
-
-  return "text-rose-700 bg-rose-50 ring-1 ring-rose-200";
+  return "text-rose-600 bg-rose-50 ring-1 ring-rose-200";
 }
 
-function getScoreBand(score: number) {
-  if (score >= 80) return tr.scoreBands.premium;
-  if (score >= 65) return tr.scoreBands.strong;
-  if (score >= 50) return tr.scoreBands.developing;
-  if (score >= 35) return tr.scoreBands.watch;
-  return tr.scoreBands.weak;
-}
-
-export default function ScannerPanel({
+export default function FavoritesPanel({
   items,
-  loading,
   activeSymbol,
-  favoriteSymbols,
-  onSelectSymbol,
-  onToggleFavorite,
+  onSelect,
+  onRemove,
 }: Props) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">
-            {tr.scanner.title}
-          </h2>
-          <p className="text-sm text-slate-500">{tr.scanner.subtitle}</p>
-        </div>
-
-        <div className="text-xs font-medium uppercase tracking-wide text-slate-400">
-          {tr.scanner.sortedByScore}
-        </div>
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold text-slate-900">
+          {tr.favorites.title}
+        </h2>
+        <p className="text-sm text-slate-500">{tr.favorites.subtitle}</p>
       </div>
 
-      {loading ? (
+      {items.length === 0 ? (
         <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-          {tr.scanner.loading}
-        </div>
-      ) : items.length === 0 ? (
-        <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-          {tr.scanner.empty}
+          {tr.favorites.empty}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
           {items.map((item) => {
             const isActive = item.symbol === activeSymbol;
-            const isFavorite = favoriteSymbols.includes(item.symbol);
 
             return (
               <button
                 key={item.symbol}
                 type="button"
-                onClick={() => onSelectSymbol(item.symbol)}
-                className={[
-                  "rounded-2xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
+                onClick={() => onSelect(item.symbol)}
+                className={`rounded-2xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
                   isActive
                     ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white text-slate-900",
-                ].join(" ")}
+                    : "border-slate-200 bg-white text-slate-900"
+                }`}
               >
-                <div className="mb-4 flex items-start justify-between gap-3">
+                <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
                     <div className="text-base font-bold">{item.symbol}</div>
 
                     <div className="mt-2 flex flex-wrap gap-2">
-                      <div
+                      <span
                         className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
                           isActive
                             ? "bg-white/15 text-white ring-1 ring-white/20"
@@ -141,9 +111,9 @@ export default function ScannerPanel({
                         }`}
                       >
                         {tr.trend[item.trend]}
-                      </div>
+                      </span>
 
-                      <div
+                      <span
                         className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
                           isActive
                             ? "bg-white/15 text-white ring-1 ring-white/20"
@@ -151,46 +121,38 @@ export default function ScannerPanel({
                         }`}
                       >
                         {tr.signal[item.signal]}
-                      </div>
+                      </span>
                     </div>
                   </div>
 
                   <div className="flex items-start gap-2">
                     <div
-                      className={[
-                        "rounded-xl px-3 py-2 text-right",
+                      className={`rounded-xl px-3 py-2 text-right ${
                         isActive
                           ? "bg-white/10 ring-1 ring-white/15"
-                          : getScoreTone(item.score),
-                      ].join(" ")}
+                          : getScoreTone(item.score)
+                      }`}
                     >
                       <div className="text-xs font-medium uppercase tracking-wide opacity-80">
                         {tr.panel.score}
                       </div>
                       <div className="text-lg font-bold">{item.score}</div>
-                      <div className="mt-1 text-[11px] font-medium opacity-80">
-                        {getScoreBand(item.score)}
-                      </div>
                     </div>
 
                     <button
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
-                        onToggleFavorite(item.symbol);
+                        onRemove(item.symbol);
                       }}
                       className={`rounded-full p-2 ${
                         isActive
                           ? "bg-white/10 text-white ring-1 ring-white/15"
-                          : isFavorite
-                            ? "bg-rose-50 text-rose-500 ring-1 ring-rose-200"
-                            : "bg-slate-100 text-slate-500"
+                          : "bg-slate-100 text-rose-500"
                       }`}
-                      aria-label={
-                        isFavorite ? tr.favorites.remove : tr.favorites.add
-                      }
+                      aria-label={tr.favorites.remove}
                     >
-                      {isFavorite ? "❤" : "♡"}
+                      ❤
                     </button>
                   </div>
                 </div>
@@ -198,7 +160,7 @@ export default function ScannerPanel({
                 <div className="space-y-2 text-sm">
                   <p className={isActive ? "text-slate-100" : "text-slate-700"}>
                     <span className="font-semibold">
-                      {tr.scanner.trigger}:{" "}
+                      {tr.panel.entryHint}:{" "}
                     </span>
                     {item.tradePlan
                       ? tr.newPositionAction[item.tradePlan.newPositionAction]
@@ -212,15 +174,13 @@ export default function ScannerPanel({
                       : tr.panel.notAvailable}
                   </p>
 
-                  {item.marketContext && (
-                    <p
-                      className={`leading-6 ${
-                        isActive ? "text-slate-100" : "text-slate-600"
-                      }`}
-                    >
-                      {item.marketContext}
-                    </p>
-                  )}
+                  <p
+                    className={`leading-6 ${
+                      isActive ? "text-slate-100" : "text-slate-600"
+                    }`}
+                  >
+                    {item.summary}
+                  </p>
                 </div>
               </button>
             );

@@ -1,279 +1,320 @@
 import { useEffect, useMemo, useState } from "react";
-import Chart from "./components/Chart";
 import AnalysisPanel from "./components/AnalysisPanel";
-import ScannerPanel from "./components/ScannerPanel";
-import { tr } from "./i18n/tr";
+import DashboardHeader from "./components/dashboard/sections/DashboardHeader";
+import MainChartSection from "./components/dashboard/sections/MainChartSection";
+import MiniTimeframesSection from "./components/dashboard/sections/MiniTimeFrameSection";
+import SpikeShowcaseSection from "./components/dashboard/sections/SpikeShowcaseSection";
+import FavoritesSection from "./components/dashboard/sections/FavoritesSection";
+import OpportunitiesSection from "./components/dashboard/sections/OpportunitiesSection";
+import {
+  sortScannerItems,
+  type ScannerSortMode,
+} from "./components/dashboard/dashboard-helpers";
+import { buildStructuredAnalysis } from "../../../packages/analysis-core/src";
+import type { Timeframe } from "../../../packages/shared/src";
+import { useMarketSymbols } from "./hooks/useMarketSymbols";
+import { useScanner } from "./hooks/useScanner";
+import { useCoinDetail } from "./hooks/useCoinDetail";
+import { useMiniTimeframes } from "./hooks/useMiniTimeframes";
+import { useNotifications } from "./hooks/useNotifications";
 
-type Candle = {
-  time: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-};
-
-type LinePoint = {
-  time: number;
-  value: number;
-};
-
-type Zone = {
-  low: number;
-  high: number;
-  touches: number;
-};
-
-type TradePlan = {
-  bias: "long_watch" | "short_risk" | "wait";
-  entryHint: string;
-  breakoutAbove: number | null;
-  breakdownBelow: number | null;
-  invalidationHint: string;
-  takeProfitHint: string;
-  actionComment: string;
-};
-
-type AnalyzeResponse = {
-  symbol: string;
-  interval: "1h" | "4h";
-  candles: Candle[];
-  report: {
-    trend: "uptrend" | "downtrend" | "range";
-    supportZones: Zone[];
-    resistanceZones: Zone[];
-    score: number;
-    signal:
-      | "possible_buy_zone"
-      | "breakout_watch"
-      | "pullback_entry"
-      | "no_trade";
-    reasons: string[];
-    summary: string;
-    ema20: LinePoint[];
-    ema50: LinePoint[];
-    ema200: LinePoint[];
-
-    volumeState: "weak" | "normal" | "strong";
-    volumeComment: string;
-    orderFlowComment: string;
-    marketContext: string;
-    expertCommentary: string;
-
-    newsState: "not_connected" | "positive" | "negative" | "mixed";
-    newsComment: string;
-
-    tradePlan: TradePlan;
-  };
-};
-
-type ScannerItem = {
-  symbol: string;
-  interval: "1h" | "4h";
-  trend: "uptrend" | "downtrend" | "range";
+type TimeframeSummaryItem = {
+  timeframe: Timeframe;
   score: number;
-  signal:
-    | "possible_buy_zone"
-    | "breakout_watch"
-    | "pullback_entry"
-    | "no_trade";
-  summary: string;
-  supportZones: Zone[];
-  resistanceZones: Zone[];
-  reasons: string[];
-  tradePlan: TradePlan;
+  verdict: string;
+  tone: "bullish" | "cautious" | "neutral" | "bearish";
 };
 
-type ScanResponse = {
-  interval: "1h" | "4h";
-  items: ScannerItem[];
-};
+const FAVORITES_STORAGE_KEY = "crypto-analyzer-favorites";
+const NOTIFICATIONS_ENABLED_KEY = "crypto-analyzer-notifications-enabled";
+const SCORE_ALERT_THRESHOLD_KEY = "crypto-analyzer-score-alert-threshold";
+const FAVORITE_DROP_THRESHOLD_KEY = "crypto-analyzer-favorite-drop-threshold";
 
-const symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"];
+function loadFavoriteSymbols(): string[] {
+  try {
+    const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
+    if (!raw) return ["BTCUSDT", "ETHUSDT"];
 
-function App() {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return ["BTCUSDT", "ETHUSDT"];
+
+    return parsed.filter((item): item is string => typeof item === "string");
+  } catch {
+    return ["BTCUSDT", "ETHUSDT"];
+  }
+}
+
+function loadBoolean(key: string, fallback: boolean): boolean {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    return raw === "true";
+  } catch {
+    return fallback;
+  }
+}
+
+function loadNumber(key: string, fallback: number): number {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export default function App() {
   const [symbol, setSymbol] = useState("BTCUSDT");
-  const [interval, setInterval] = useState<"1h" | "4h">("4h");
+  const [interval, setInterval] = useState<Timeframe>("4h");
+  const [minScore, setMinScore] = useState(60);
+  const [sortMode, setSortMode] = useState<ScannerSortMode>("score");
 
-  const [data, setData] = useState<AnalyzeResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [favoriteSymbols, setFavoriteSymbols] = useState<string[]>(() =>
+    loadFavoriteSymbols(),
+  );
 
-  const [scannerItems, setScannerItems] = useState<ScannerItem[]>([]);
-  const [scannerLoading, setScannerLoading] = useState(false);
-  const [scannerError, setScannerError] = useState<string | null>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(
+    () => loadBoolean(NOTIFICATIONS_ENABLED_KEY, false),
+  );
+  const [scoreAlertThreshold, setScoreAlertThreshold] = useState<number>(() =>
+    loadNumber(SCORE_ALERT_THRESHOLD_KEY, 90),
+  );
+  const [favoriteDropThreshold, setFavoriteDropThreshold] = useState<number>(
+    () => loadNumber(FAVORITE_DROP_THRESHOLD_KEY, -8),
+  );
+  const [notificationPermission, setNotificationPermission] = useState<
+    NotificationPermission | "unsupported"
+  >(
+    typeof window !== "undefined" && "Notification" in window
+      ? Notification.permission
+      : "unsupported",
+  );
+
+  const {
+    symbols,
+    loading: symbolsLoading,
+    error: symbolsError,
+  } = useMarketSymbols();
+
+  const {
+    candles,
+    snapshot,
+    loading: detailLoading,
+    error: detailError,
+    ema20,
+    ema50,
+    ema200,
+    supportZones,
+    resistanceZones,
+  } = useCoinDetail(symbol, interval);
+
+  const {
+    items: miniTimeframes,
+    loading: miniLoading,
+    error: miniError,
+  } = useMiniTimeframes(symbol);
+
+  const {
+    items: scannerItems,
+    loading: scanLoading,
+    error: scanError,
+    hasMore,
+    loadMore,
+  } = useScanner(interval, symbols);
+
+  useNotifications({
+    items: scannerItems,
+    favoriteSymbols,
+    notificationsEnabled,
+    notificationPermission,
+    scoreAlertThreshold,
+    favoriteDropThreshold,
+  });
 
   useEffect(() => {
-    const run = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const res = await fetch(
-          `http://localhost:3001/api/analyze?symbol=${symbol}&interval=${interval}&limit=300`,
-        );
-
-        if (!res.ok) {
-          throw new Error("Analysis request failed");
-        }
-
-        const json: AnalyzeResponse = await res.json();
-        setData(json);
-      } catch (err) {
-        console.error(err);
-        setError(tr.app.error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    run();
-  }, [symbol, interval]);
+    localStorage.setItem(
+      FAVORITES_STORAGE_KEY,
+      JSON.stringify(favoriteSymbols),
+    );
+  }, [favoriteSymbols]);
 
   useEffect(() => {
-    const runScanner = async () => {
-      setScannerLoading(true);
-      setScannerError(null);
+    localStorage.setItem(
+      NOTIFICATIONS_ENABLED_KEY,
+      String(notificationsEnabled),
+    );
+  }, [notificationsEnabled]);
 
-      try {
-        const res = await fetch(
-          `http://localhost:3001/api/scan?interval=${interval}&limit=300`,
-        );
+  useEffect(() => {
+    localStorage.setItem(
+      SCORE_ALERT_THRESHOLD_KEY,
+      String(scoreAlertThreshold),
+    );
+  }, [scoreAlertThreshold]);
 
-        if (!res.ok) {
-          throw new Error("Scanner request failed");
-        }
-
-        const json: ScanResponse = await res.json();
-        setScannerItems(json.items);
-      } catch (err) {
-        console.error(err);
-        setScannerItems([]);
-        setScannerError(tr.app.scannerError);
-      } finally {
-        setScannerLoading(false);
-      }
-    };
-
-    runScanner();
-  }, [interval]);
+  useEffect(() => {
+    localStorage.setItem(
+      FAVORITE_DROP_THRESHOLD_KEY,
+      String(favoriteDropThreshold),
+    );
+  }, [favoriteDropThreshold]);
 
   const sortedScannerItems = useMemo(() => {
-    return [...scannerItems].sort((a, b) => b.score - a.score);
-  }, [scannerItems]);
+    return sortScannerItems(scannerItems, sortMode);
+  }, [scannerItems, sortMode]);
+
+  const spikeShowcaseItems = useMemo(() => {
+    return sortedScannerItems
+      .filter((item) => item.spikeClassification !== "none")
+      .slice(0, 6);
+  }, [sortedScannerItems]);
+
+  const favoriteItems = useMemo(() => {
+    return favoriteSymbols
+      .map((favoriteSymbol) =>
+        scannerItems.find((item) => item.symbol === favoriteSymbol),
+      )
+      .filter(Boolean);
+  }, [favoriteSymbols, scannerItems]);
+
+  const opportunityItems = useMemo(() => {
+    return sortedScannerItems.filter(
+      (item) =>
+        item.snapshot.score >= minScore &&
+        !favoriteSymbols.includes(item.symbol),
+    );
+  }, [sortedScannerItems, minScore, favoriteSymbols]);
+
+  const timeframeSummary = useMemo<TimeframeSummaryItem[]>(() => {
+    return miniTimeframes.map((item) => {
+      const structured = buildStructuredAnalysis(item.snapshot);
+
+      return {
+        timeframe: item.timeframe,
+        score: item.snapshot.score,
+        verdict: structured.newPosition.verdict,
+        tone: structured.newPosition.tone,
+      };
+    });
+  }, [miniTimeframes]);
+
+  const toggleFavorite = (targetSymbol: string) => {
+    setFavoriteSymbols((current) => {
+      if (current.includes(targetSymbol)) {
+        return current.filter((item) => item !== targetSymbol);
+      }
+
+      return [targetSymbol, ...current];
+    });
+  };
+
+  const requestNotificationPermission = async () => {
+    if (!("Notification" in window)) {
+      setNotificationPermission("unsupported");
+      return;
+    }
+
+    const result = await Notification.requestPermission();
+    setNotificationPermission(result);
+
+    if (result === "granted") {
+      setNotificationsEnabled(true);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-100">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-              {tr.app.title}
-            </h1>
-            <p className="mt-1 text-sm text-slate-500">{tr.app.subtitle}</p>
-          </div>
+        <DashboardHeader
+          symbol={symbol}
+          interval={interval}
+          minScore={minScore}
+          sortMode={sortMode}
+          symbols={symbols}
+          symbolsLoading={symbolsLoading}
+          scoreAlertThreshold={scoreAlertThreshold}
+          favoriteDropThreshold={favoriteDropThreshold}
+          notificationsEnabled={notificationsEnabled}
+          notificationPermission={notificationPermission}
+          symbolsError={symbolsError}
+          detailError={detailError}
+          scanError={scanError}
+          miniError={miniError}
+          onSymbolChange={setSymbol}
+          onIntervalChange={setInterval}
+          onMinScoreChange={setMinScore}
+          onSortModeChange={setSortMode}
+          onScoreAlertThresholdChange={setScoreAlertThreshold}
+          onFavoriteDropThresholdChange={setFavoriteDropThreshold}
+          onNotificationsEnabledChange={setNotificationsEnabled}
+          onRequestNotificationPermission={requestNotificationPermission}
+        />
 
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <select
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
-              className="min-w-[160px] rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-            >
-              {symbols.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_380px]">
+          <section className="space-y-6">
+            <MainChartSection
+              symbol={symbol}
+              intervalLabel={interval.toUpperCase()}
+              snapshot={snapshot}
+              candles={candles}
+              ema20={ema20}
+              ema50={ema50}
+              ema200={ema200}
+              supportZones={supportZones}
+              resistanceZones={resistanceZones}
+              detailLoading={detailLoading}
+            />
 
-            <select
-              value={interval}
-              onChange={(e) => setInterval(e.target.value as "1h" | "4h")}
-              className="min-w-[120px] rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-            >
-              <option value="1h">1H</option>
-              <option value="4h">4H</option>
-            </select>
-          </div>
-        </div>
+            <MiniTimeframesSection
+              items={miniTimeframes}
+              activeInterval={interval}
+              loading={miniLoading}
+              onSelect={setInterval}
+            />
 
-        {loading && (
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-sm">
-            {tr.app.loading}
-          </div>
-        )}
+            <SpikeShowcaseSection
+              items={spikeShowcaseItems}
+              favoriteSymbols={favoriteSymbols}
+              favoriteDropThreshold={favoriteDropThreshold}
+              activeSymbol={symbol}
+              onOpen={setSymbol}
+              onToggleFavorite={toggleFavorite}
+            />
 
-        {error && (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm font-medium text-rose-700 shadow-sm">
-            {error}
-          </div>
-        )}
+            <FavoritesSection
+              items={favoriteItems}
+              activeSymbol={symbol}
+              favoriteSymbols={favoriteSymbols}
+              favoriteDropThreshold={favoriteDropThreshold}
+              onOpen={setSymbol}
+              onToggleFavorite={toggleFavorite}
+            />
 
-        {!loading && !error && data && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold text-slate-900">
-                      {tr.app.chartTitle}
-                    </h2>
-                    <p className="text-sm text-slate-500">
-                      {tr.app.chartSubtitle}
-                    </p>
-                  </div>
-                </div>
+            <OpportunitiesSection
+              items={opportunityItems}
+              favoriteSymbols={favoriteSymbols}
+              favoriteDropThreshold={favoriteDropThreshold}
+              activeSymbol={symbol}
+              loading={scanLoading}
+              hasMore={hasMore}
+              onOpen={setSymbol}
+              onToggleFavorite={toggleFavorite}
+              onLoadMore={loadMore}
+            />
+          </section>
 
-                <Chart
-                  data={data.candles}
-                  ema20={data.report.ema20}
-                  ema50={data.report.ema50}
-                  ema200={data.report.ema200}
-                  supportZones={data.report.supportZones}
-                  resistanceZones={data.report.resistanceZones}
-                />
-              </section>
-
+          <aside>
+            {snapshot && (
               <AnalysisPanel
-                symbol={data.symbol}
-                interval={data.interval}
-                trend={data.report.trend}
-                score={data.report.score}
-                signal={data.report.signal}
-                summary={data.report.summary}
-                reasons={data.report.reasons}
-                supportZones={data.report.supportZones}
-                resistanceZones={data.report.resistanceZones}
-                volumeState={data.report.volumeState}
-                volumeComment={data.report.volumeComment}
-                orderFlowComment={data.report.orderFlowComment}
-                marketContext={data.report.marketContext}
-                expertCommentary={data.report.expertCommentary}
-                newsState={data.report.newsState}
-                newsComment={data.report.newsComment}
-                tradePlan={data.report.tradePlan}
+                snapshot={snapshot}
+                timeframeSummary={timeframeSummary}
               />
-            </div>
-
-            <div className="space-y-3">
-              {scannerError && (
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-700 shadow-sm">
-                  {scannerError}
-                </div>
-              )}
-
-              <ScannerPanel
-                items={sortedScannerItems}
-                loading={scannerLoading}
-                activeSymbol={symbol}
-                onSelectSymbol={setSymbol}
-              />
-            </div>
-          </div>
-        )}
+            )}
+          </aside>
+        </div>
       </div>
     </div>
   );
 }
-
-export default App;

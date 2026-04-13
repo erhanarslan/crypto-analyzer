@@ -1,13 +1,11 @@
 import { useEffect, useRef } from "react";
 import {
   CandlestickSeries,
-  LineSeries,
+  ColorType,
   createChart,
-  type IChartApi,
-  type ISeriesApi,
-  type CandlestickData,
-  type LineData,
-  type UTCTimestamp,
+  CrosshairMode,
+  LineSeries,
+  LineStyle,
 } from "lightweight-charts";
 
 type Candle = {
@@ -16,6 +14,7 @@ type Candle = {
   high: number;
   low: number;
   close: number;
+  volume: number;
 };
 
 type LinePoint = {
@@ -23,18 +22,21 @@ type LinePoint = {
   value: number;
 };
 
-type Zone = {
+type ZoneWithTouches = {
   low: number;
   high: number;
+  touches: number;
 };
 
-type Props = {
+type ChartProps = {
   data: Candle[];
   ema20: LinePoint[];
   ema50: LinePoint[];
   ema200: LinePoint[];
-  supportZones: Zone[];
-  resistanceZones: Zone[];
+  supportZones?: ZoneWithTouches[];
+  resistanceZones?: ZoneWithTouches[];
+  height?: number;
+  compact?: boolean;
 };
 
 export default function Chart({
@@ -42,178 +44,173 @@ export default function Chart({
   ema20,
   ema50,
   ema200,
-  supportZones,
-  resistanceZones,
-}: Props) {
+  supportZones = [],
+  resistanceZones = [],
+  height = 520,
+  compact = false,
+}: ChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const chartRef = useRef<IChartApi | null>(null);
-  const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-
-  const ema20Ref = useRef<ISeriesApi<"Line"> | null>(null);
-  const ema50Ref = useRef<ISeriesApi<"Line"> | null>(null);
-  const ema200Ref = useRef<ISeriesApi<"Line"> | null>(null);
-
-  const supportTopRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const supportBottomRef = useRef<ISeriesApi<"Line"> | null>(null);
-
-  const resistanceTopRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const resistanceBottomRef = useRef<ISeriesApi<"Line"> | null>(null);
-
   useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
 
-    const chart = createChart(containerRef.current, {
-      width: containerRef.current.clientWidth,
-      height: 550,
+    const chart = createChart(container, {
+      width: container.clientWidth,
+      height,
       layout: {
-        attributionLogo: false,
+        background: { type: ColorType.Solid, color: "#ffffff" },
+        textColor: "#334155",
+        fontSize: compact ? 10 : 12,
       },
       grid: {
-        vertLines: { visible: true },
-        horzLines: { visible: true },
+        vertLines: { color: "#e2e8f0" },
+        horzLines: { color: "#e2e8f0" },
+      },
+      rightPriceScale: {
+        borderColor: "#cbd5e1",
       },
       timeScale: {
+        borderColor: "#cbd5e1",
         timeVisible: true,
         secondsVisible: false,
       },
-      rightPriceScale: {
-        borderVisible: true,
+      crosshair: {
+        mode: CrosshairMode.Normal,
       },
+      handleScroll: true,
+      handleScale: true,
     });
 
-    const candleSeries = chart.addSeries(CandlestickSeries);
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: "#14b8a6",
+      downColor: "#f87171",
+      borderUpColor: "#14b8a6",
+      borderDownColor: "#f87171",
+      wickUpColor: "#14b8a6",
+      wickDownColor: "#f87171",
+      priceLineVisible: true,
+      lastValueVisible: true,
+    });
+
+    candleSeries.setData(
+      data.map((item) => ({
+        time: item.time as never,
+        open: item.open,
+        high: item.high,
+        low: item.low,
+        close: item.close,
+      })),
+    );
 
     const ema20Series = chart.addSeries(LineSeries, {
-      lineWidth: 2,
-      color: "#2563eb",
+      color: "#38bdf8",
+      lineWidth: compact ? 1 : 2,
+      priceLineVisible: false,
+      lastValueVisible: !compact,
     });
+
+    ema20Series.setData(
+      ema20.map((item) => ({
+        time: item.time as never,
+        value: item.value,
+      })),
+    );
 
     const ema50Series = chart.addSeries(LineSeries, {
-      lineWidth: 2,
-      color: "#0ea5e9",
+      color: "#2563eb",
+      lineWidth: compact ? 1 : 2,
+      priceLineVisible: false,
+      lastValueVisible: !compact,
     });
+
+    ema50Series.setData(
+      ema50.map((item) => ({
+        time: item.time as never,
+        value: item.value,
+      })),
+    );
 
     const ema200Series = chart.addSeries(LineSeries, {
-      lineWidth: 2,
       color: "#1d4ed8",
+      lineWidth: compact ? 1 : 2,
+      priceLineVisible: false,
+      lastValueVisible: !compact,
     });
 
-    const supportTop = chart.addSeries(LineSeries, {
-      lineWidth: 1,
-      color: "#16a34a",
-      lineStyle: 2,
-    });
+    ema200Series.setData(
+      ema200.map((item) => ({
+        time: item.time as never,
+        value: item.value,
+      })),
+    );
 
-    const supportBottom = chart.addSeries(LineSeries, {
-      lineWidth: 1,
-      color: "#16a34a",
-      lineStyle: 2,
-    });
+    const priceLineHandles = [
+      ...supportZones.flatMap((zone) => [
+        candleSeries.createPriceLine({
+          price: zone.low,
+          color: "#22c55e",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: compact ? "" : "S",
+        }),
+        candleSeries.createPriceLine({
+          price: zone.high,
+          color: "#16a34a",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: compact ? "" : "S",
+        }),
+      ]),
+      ...resistanceZones.flatMap((zone) => [
+        candleSeries.createPriceLine({
+          price: zone.low,
+          color: "#ef4444",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: compact ? "" : "R",
+        }),
+        candleSeries.createPriceLine({
+          price: zone.high,
+          color: "#dc2626",
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: compact ? "" : "R",
+        }),
+      ]),
+    ];
 
-    const resistanceTop = chart.addSeries(LineSeries, {
-      lineWidth: 1,
-      color: "#dc2626",
-      lineStyle: 2,
-    });
+    chart.timeScale().fitContent();
 
-    const resistanceBottom = chart.addSeries(LineSeries, {
-      lineWidth: 1,
-      color: "#dc2626",
-      lineStyle: 2,
-    });
-
-    chartRef.current = chart;
-    candleRef.current = candleSeries;
-
-    ema20Ref.current = ema20Series;
-    ema50Ref.current = ema50Series;
-    ema200Ref.current = ema200Series;
-
-    supportTopRef.current = supportTop;
-    supportBottomRef.current = supportBottom;
-
-    resistanceTopRef.current = resistanceTop;
-    resistanceBottomRef.current = resistanceBottom;
-
-    const resize = () => {
-      if (!containerRef.current || !chartRef.current) return;
-      chartRef.current.applyOptions({
-        width: containerRef.current.clientWidth,
+    const handleResize = () => {
+      chart.applyOptions({
+        width: container.clientWidth,
+        height,
       });
+      chart.timeScale().fitContent();
     };
 
-    window.addEventListener("resize", resize);
+    window.addEventListener("resize", handleResize);
 
     return () => {
-      window.removeEventListener("resize", resize);
+      window.removeEventListener("resize", handleResize);
+      priceLineHandles.forEach((line) => candleSeries.removePriceLine(line));
       chart.remove();
     };
-  }, []);
+  }, [
+    data,
+    ema20,
+    ema50,
+    ema200,
+    supportZones,
+    resistanceZones,
+    height,
+    compact,
+  ]);
 
-  useEffect(() => {
-    if (!candleRef.current) return;
-
-    const candles: CandlestickData<UTCTimestamp>[] = data.map((c) => ({
-      time: c.time as UTCTimestamp,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-    }));
-
-    candleRef.current.setData(candles);
-
-    const mapLine = (arr: LinePoint[]): LineData<UTCTimestamp>[] =>
-      arr.map((p) => ({
-        time: p.time as UTCTimestamp,
-        value: p.value,
-      }));
-
-    ema20Ref.current?.setData(mapLine(ema20));
-    ema50Ref.current?.setData(mapLine(ema50));
-    ema200Ref.current?.setData(mapLine(ema200));
-
-    const support = supportZones[0];
-    if (support) {
-      const top = data.map((c) => ({
-        time: c.time as UTCTimestamp,
-        value: support.high,
-      }));
-
-      const bottom = data.map((c) => ({
-        time: c.time as UTCTimestamp,
-        value: support.low,
-      }));
-
-      supportTopRef.current?.setData(top);
-      supportBottomRef.current?.setData(bottom);
-    } else {
-      supportTopRef.current?.setData([]);
-      supportBottomRef.current?.setData([]);
-    }
-
-    const resistance = resistanceZones[0];
-    if (resistance) {
-      const top = data.map((c) => ({
-        time: c.time as UTCTimestamp,
-        value: resistance.high,
-      }));
-
-      const bottom = data.map((c) => ({
-        time: c.time as UTCTimestamp,
-        value: resistance.low,
-      }));
-
-      resistanceTopRef.current?.setData(top);
-      resistanceBottomRef.current?.setData(bottom);
-    } else {
-      resistanceTopRef.current?.setData([]);
-      resistanceBottomRef.current?.setData([]);
-    }
-
-    chartRef.current?.timeScale().fitContent();
-  }, [data, ema20, ema50, ema200, supportZones, resistanceZones]);
-
-  return <div ref={containerRef} style={{ width: "100%" }} />;
+  return <div ref={containerRef} className="w-full" />;
 }
