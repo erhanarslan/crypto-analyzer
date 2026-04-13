@@ -1,6 +1,6 @@
 import type { Candle, Timeframe } from "../../../../packages/shared/src";
 
-const BINANCE_BASE_URL = "https://api.binance.com";
+const BINANCE_BASE_URL = "https://data-api.binance.vision";
 
 type BinanceKline = [
   number,
